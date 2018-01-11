@@ -1,0 +1,46 @@
+{
+    "name": "Umbrella Service",
+    "author": "fdelavega",
+    "version": "0.1",
+    "module": "umbrella_service.UmbrellaService",
+    "media_types": [],
+    "formats": ["URL"],
+    "overrides": [],
+    "pull_accounting": true,
+    "form": {
+        "auth_method": {
+            "type": "select",
+            "label": "Authorization Method",
+            "mandatory": true,
+            "default": "umbrella",
+            "options": [{
+                "label": "API Umbrella role",
+                "value": "umbrella"
+            }, {
+                "label": "FIWARE IdM role",
+                "value": "idm"
+            }, {
+                "label": "Both roles",
+                "value": "both"
+            }]
+        },
+        "role": {
+            "type": "text",
+            "label": "Acquisition Role",
+            "placeholder": "customer",
+            "mandatory": true
+        },
+        "admin_key": {
+            "type": "text",
+            "label": "Admin API Key",
+            "placeholder": "admin_api_key",
+            "mandatory": true
+        },
+        "admin_token": {
+            "type": "text",
+            "label": "Admin Auth Token",
+            "placeholder": "admin_auth_token",
+            "mandatory": true
+        },
+    }
+}
