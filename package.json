@@ -8,19 +8,19 @@
     "overrides": [],
     "pull_accounting": true,
     "form": {
-        "auth_method": {
+        "auth_type": {
             "type": "select",
             "label": "Authorization Method",
             "mandatory": true,
             "default": "umbrella",
             "options": [{
-                "label": "API Umbrella role",
+                "text": "API Umbrella role",
                 "value": "umbrella"
             }, {
-                "label": "FIWARE IdM role",
+                "text": "FIWARE IdM role",
                 "value": "idm"
             }, {
-                "label": "Both roles",
+                "text": "Both roles",
                 "value": "both"
             }]
         },
@@ -41,6 +41,6 @@
             "label": "Admin Auth Token",
             "placeholder": "admin_auth_token",
             "mandatory": true
-        },
+        }
     }
 }

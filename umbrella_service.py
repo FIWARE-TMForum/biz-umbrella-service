@@ -37,7 +37,7 @@ from umbrella_client import UmbrellaClient
 from keystone_client import KeystoneClient
 
 
-class JointClient()
+class JointClient():
 
     def __init__(self, url, token, key):
         parsed_url = urlparse(url)

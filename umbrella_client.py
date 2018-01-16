@@ -65,7 +65,7 @@ class UmbrellaClient(object):
             'X-Admin-Auth-Token': self._token
         }, verify=False)
 
-    def _paginate_data(self, url, err_msg, page_processor)
+    def _paginate_data(self, url, err_msg, page_processor):
         page_len = 100
         start = 0
         processed = False
