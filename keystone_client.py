@@ -31,6 +31,7 @@ class KeystoneClient(object):
     def __init__(self):
         self._login()
         self._url = ''
+        self._app_id = None
 
     def _login(self):
         body = {
@@ -79,7 +80,24 @@ class KeystoneClient(object):
 
         return app_id
 
-    def _get_role_id(self, app_id, role_name):
+    def set_app_id(self, app_id):
+        if app_id is None:
+            raise Exception('The specified application is not registered in keystone')
+
+        # Validate that the included app id is a valid application in keystone
+        self._check_app_id(app_id)
+        self._app_id = app_id
+
+    def _check_app_id(self, app_id):
+        app_url = KEYSTONE_HOST + '/v3/OS-OAUTH2/consumers/{}'.format(app_id)
+        resp = requests.get(apps_url, headers={
+            'X-Auth-Token': self._auth_token
+        })
+
+        if resp.status_code != 200:
+            raise Exception('The specified application is not registered in keystone')
+
+    def _get_role_id(self, role_name):
         # Get available roles
         roles_url = KEYSTONE_HOST + '/v3/OS-ROLES/roles'
         resp = requests.get(roles_url, headers={
@@ -91,7 +109,7 @@ class KeystoneClient(object):
         roles = resp.json()
 
         for role in roles['roles']:
-            if role['application_id'] == app_id and role['name'].lower() == role_name.lower():
+            if role['application_id'] == self._app_id and role['name'].lower() == role_name.lower():
                 role_id = role['id']
                 break
         else:
@@ -100,15 +118,14 @@ class KeystoneClient(object):
         return role_id
 
     def _get_role_assign_url(self, role_name, user):
-        app_id = self._get_app_id()
-        role_id = self._get_role_id(app_id, role_name)
-        return KEYSTONE_HOST + '/v3/OS-ROLES/users/' + user.username + '/applications/' + app_id + '/roles/' + role_id
+        role_id = self._get_role_id(role_name)
+        return KEYSTONE_HOST + '/v3/OS-ROLES/users/' + user.username + '/applications/' + self._app_id + '/roles/' + role_id
 
     def set_resource_url(self, url):
         self._url = url
 
     def check_role(self, role):
-        self._get_role_id(self._get_app_id(), role)
+        self._get_role_id(role)
 
     def grant_permission(self, user, role):
         # Get ids

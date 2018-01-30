@@ -98,11 +98,19 @@ class UmbrellaClient(object):
 
         # Make paginated requests to API umbrella looking for the provided paths
         url = '/api-umbrella/v1/apis.json?search[value]={}&search[regex]=false'.format(paths[0])
+        app_id = None
         def page_processor(api):
             front_path = [p for p in api['frontend_prefixes'].split('/') if p != '']
-            return len(front_path) <= len(paths) and front_path == paths[:len(front_path)]
+            match = len(front_path) <= len(paths) and front_path == paths[:len(front_path)]
+
+            # If the API is configured to accept access tokens from an external IDP save its external id
+            if match and 'idp_app_id' in api['settings'] and len(api['settings']['idp_app_id']):
+                app_id = api['settings']['idp_app_id']
+
+            return match
 
         self._paginate_data(url, err_msg, page_processor)
+        return app_id
 
     def check_role(self, role):
         # Check that the provided role already exists, in order to avoid users creating new roles

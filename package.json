@@ -8,7 +8,7 @@
     "overrides": [],
     "pull_accounting": true,
     "form": {
-        "auth_type": {
+        "auth_method": {
             "type": "select",
             "label": "Authorization Method",
             "mandatory": true,

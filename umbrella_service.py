@@ -39,18 +39,19 @@ from keystone_client import KeystoneClient
 
 class JointClient():
 
-    def __init__(self, url, token, key):
+    def __init__(self, url, credentials):
         parsed_url = urlparse(url)
         server = '{}://{}'.format(parsed_url.scheme, parsed_url.netloc)
 
-        self._umbrella_client = UmbrellaClient(server, token, key)
+        self._umbrella_client = UmbrellaClient(server, credentials['token'], credentials['key'])
 
         self._keystone_client = KeystoneClient()
         self._keystone_client.set_resource_url(url)
-    
-    def check_role(self, role):
+        self._keystone_client.set_app_id(credentials['app_id'])
+
+    def check_role(self, role, app_id):
         self._umbrella_client.check_role(role)
-        self._keystone_client.check_role(role)
+        self._keystone_client.check_role(role, app_id)
     
     def grant_permission(self, customer, role):
         self._umbrella_client.grant_permission(customer, role)
@@ -72,55 +73,53 @@ class UmbrellaService(Plugin):
             'both': self._get_joint_client
         }
 
-    def get_request(self, *args, **kwargs):
-        try:
-            return requests.get(*args, **kwargs)
-        except requests.ConnectionError:
-            raise PermissionDenied('Invalid resource: The CKAN server is not responding')
-
-    def check_user_is_owner(self, provider, url):
-        pass
-
-    def on_pre_product_spec_validation(self, provider, asset_t, media_type, url):
-        self.check_user_is_owner(provider, url)
-
-    def _get_umbrella_client(self, url, token, key):
+    def _get_umbrella_client(self, url, credentials):
         parsed_url = urlparse(url)
         server = '{}://{}'.format(parsed_url.scheme, parsed_url.netloc)
 
-        return UmbrellaClient(server, token, key)
+        return UmbrellaClient(server, credentials['token'], credentials['key'])
 
-    def _get_keystone_client(self, url, token, key):
+    def _get_keystone_client(self, url, credentials):
         keystone_client = KeystoneClient()
         keystone_client.set_resource_url(url)
+        keystone_client.set_app_id(credentials['app_id'])
 
         return keystone_client
 
-    def _get_joint_client(self, url, token, key):
-        return JointClient(url, token, key)
+    def _get_joint_client(self, url, credentials):
+        return JointClient(url, credentials)
 
-    def _get_api_client(self, auth_method, url, token, key):
+    def _get_api_client(self, auth_method, url, credentials):
         # Return API Client (Umbrella or keystone) depending on the authorization mechanism
-        return self._clients[auth_method](url, token, key)
+        return self._clients[auth_method](url, credentials)
 
     def _check_api(self, url, token, key):
         parsed_url = urlparse(url)
         server = '{}://{}'.format(parsed_url.scheme, parsed_url.netloc)
 
         umbrella_client = UmbrellaClient(server, token, key)
-        umbrella_client.validate_service(parsed_url.path)
+        return umbrella_client.validate_service(parsed_url.path)
 
     def on_post_product_spec_validation(self, provider, asset):
-        # Check that the URL provided in the asset is a valid API Umbrella service
+        # If customer access to subpaths is allowed, the URL miust not include query string
         url = asset.get_url()
-        token = asset.meta_info['admin_token']
-        key = asset.meta_info['admin_key']
 
-        self._check_api(url, token, key)
+        parsed_url = urlparse(url)
+        if asset.meta_info['path_allowed'] and parsed_url.query != '':
+            raise PluginError('Asset URL cannot include query strings when subpath access for customers is allowed')
+
+        # Check that the URL provided in the asset is a valid API Umbrella service
+        asset.meta_info['app_id'] = self._check_api(url, token, key)
 
         # Check that the provided role is valid according to the selected auth method
-        client = self._get_api_client(asset.meta_info['auth_method'], url, token, key)
+        client = self._get_api_client(asset.meta_info['auth_method'], url, {
+            'token': asset.meta_info['admin_token'],
+            'key': asset.meta_info['admin_key'],
+            'app_id': asset.meta_info['app_id']
+        })
         client.check_role(asset.meta_info['role'])
+
+        asset.save()
 
     def on_post_product_offering_validation(self, asset, product_offering):
         # Validate that the pay-per-use model (if any) is supported by the backend
@@ -141,7 +140,11 @@ class UmbrellaService(Plugin):
         token = asset.meta_info['admin_token']
         key = asset.meta_info['admin_key']
 
-        client = self._get_api_client(asset.meta_info["auth_method"], asset.get_url(), token, key)
+        client = self._get_api_client(asset.meta_info["auth_method"], asset.get_url(), {
+            'token': asset.meta_info['admin_token'],
+            'key': asset.meta_info['admin_key'],
+            'app_id': asset.meta_info['app_id']
+        })
         client.grant_permission(order.customer, asset.meta_info['role'])
 
     def on_product_suspension(self, asset, contract, order):
@@ -149,7 +152,11 @@ class UmbrellaService(Plugin):
         token = asset.meta_info['admin_token']
         key = asset.meta_info['admin_key']
 
-        client = self._get_api_client(asset.meta_info["auth_method"], asset.get_url(), token, key)
+        client = self._get_api_client(asset.meta_info["auth_method"], asset.get_url(), {
+            'token': asset.meta_info['admin_token'],
+            'key': asset.meta_info['admin_key'],
+            'app_id': asset.meta_info['app_id']
+        })
         client.revoke_permission(order.customer, asset.meta_info['role'])
 
     ####################################################################
