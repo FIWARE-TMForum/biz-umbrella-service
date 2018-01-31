@@ -30,6 +30,16 @@
             "placeholder": "customer",
             "mandatory": true
         },
+        "path_allowed": {
+            "type": "checkbox",
+            "mandatory": true,
+            "label": "Access to sub-paths allowed"
+        },
+        "qs_allowed": {
+            "type": "checkbox",
+            "mandatory": true,
+            "label": "Additional query strings allowed"
+        },
         "admin_key": {
             "type": "text",
             "label": "Admin API Key",

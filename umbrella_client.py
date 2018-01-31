@@ -23,7 +23,7 @@ import json
 import requests
 import urllib
 from datetime import datetime
-from urlparse import urljoin, urlparse
+from urlparse import urljoin, urlparse, parse_qs
 
 from django.core.exceptions import PermissionDenied
 
@@ -36,6 +36,9 @@ class UmbrellaClient(object):
         self._server = server
         self._token = token
         self._key = key
+        self._accounting_processor = {
+            'api call': self._process_call_accounting
+        }
 
     def _make_request(self, path, method, **kwargs):
         url = urljoin(self._server, path)
@@ -64,6 +67,14 @@ class UmbrellaClient(object):
             'X-Api-Key': self._key,
             'X-Admin-Auth-Token': self._token
         }, verify=False)
+
+    def _post_request(self, path, body):
+        resp = self._make_request(path, requests.post, data=body, headers={
+            'X-Api-Key': self._key,
+            'X-Admin-Auth-Token': self._token
+        }, verify=False)
+
+        return resp.json()
 
     def _paginate_data(self, url, err_msg, page_processor):
         page_len = 100
@@ -166,23 +177,109 @@ class UmbrellaClient(object):
         user_model['user']['roles'] = self._filter_roles(user_model, role)
         self._put_request('/api-umbrella/v1/users/{}'.format(user_model['user']['id']), user_model)
 
-    def _get_rule(self, field, value):
+    def _get_rule(self, field, value, operator='equal'):
         return {
             'id': field,
             'field': field,
             'type': 'string',
             'input': 'text',
-            'operator': 'equal',
+            'operator': operator,
             'value': value
         }
+    
+    def _get_null_rule(self, field):
+        return {
+            'id': field,
+            'field': field,
+            'type': 'string',
+            'input': 'select',
+            'operator': 'is_null',
+            'value': None
+        }
 
-    def get_drilldown_by_service(self, email, service, start_at, end_at):
+    def _paginate_accounting(self, params, accounting, accounting_aggregator, unit):
+        page_len = 500
+        start = 0
+        processed = False
+
+        current_date = None
+        current_value = 0
+
+        while not processed:
+            params['start'] = start
+            params['length'] = length
+            result = self._post_request('/api-umbrella/v1/analytics/logs.json', params)
+
+            # There is no remaining elements
+            if not len(result['data']):
+                processed = True
+
+            for elem in result['data']:
+                # Process log timestamp (Which includes milliseconds)
+                date = datetime.utcfromtimestamp(elem['request_at']/1000.0)
+                day = date.date()
+
+                if current_date is None:
+                    # New day to be aggregated
+                    current_date = day
+
+                # If new day is higher save the accounting info
+                if day > current_date:
+                    accounting.append({
+                        'unit': unit,
+                        'value': current_value,
+                        'date': unicode(current_date.isoformat()) + 'T00:00:00Z'
+                    })
+
+                    # Set current day and reset value
+                    current_date = day
+                    current_value = 0
+
+                current_value += accounting_aggregator(elem)
+
+            start += page_len
+
+    def _process_call_accounting(self, params, extra_qs):
+        def list_equal_elems(list1, list2):
+            intersect = set(list2).intersection(list1)
+            return len(list1) == len(list2) == len(intersect)
+
+        accounting = []
+        def call_aggregator(elem):
+            account = 1
+            # Filter query strings during aggregation to enable changing the order and
+            # included extra params when enabled
+            if len(parsed_url.query):
+                parsed_elem_qs = parse_qs(elem['request_url_query'])
+                url_qs = parse_qs(parsed_url.query)
+
+                # Check that all the query strings of the asset URL are included
+                for key, value in url_qs.iteritems():
+                    if key not in parsed_elem_qs or not list_equal_elems(value, parsed_elem_qs[key]):
+                        account = 0
+                        break
+                else:
+                    # If not extra qs allowed and included in the log element, the call do not match
+                    if not extra_qs and len(parsed_elem_qs) != len(url_qs):
+                        account = 0
+
+            return account
+
+        self._paginate_accounting(params, accounting, call_aggregator, 'api call')
+
+        return accounting
+
+    def get_drilldown_by_service(self, email, service, path_allowed, extra_qs, start_at, end_at, unit):
         parsed_url = urlparse(service)
-        rules = [
-            self._get_rule('user_email', email), self._get_rule('request_path', parsed_url.path)]
 
-        if len(parsed_url.query):
-            rules.append(self._get_rule('request_url_query', parsed_url.query))
+        rules = [
+            self._get_null_rule('gatekeeper_denied_code')
+            self._get_rule('user_email', email)
+        ]
+
+        # Include path rule depending on whether subpath requests are allowed
+        path_operator = 'equal' if not path_allowed else 'begins_with'
+        rules.append(self._get_rule('request_path', parsed_url.path, operator=path_operator))
 
         query = {
             'condition': 'AND',
@@ -190,22 +287,10 @@ class UmbrellaClient(object):
             'valid': True
         }
 
-        query_param = urllib.quote(json.dumps(query), safe='')
-        prefix = '2/{}/{}/'.format(parsed_url.netloc, parsed_url.path.split('/')[1])
+        params = {
+            'start_at': start_at,
+            'end_at': end_at,
+            'query': json.dumps(query)
+        }
 
-        query_string = '?start_at={}&end_at={}&interval=day&query={}&prefix={}&beta_analytics=false'.format(
-            start_at, end_at, query_param, prefix
-        )
-        stats = self._get_request('/api-umbrella/v1/analytics/drilldown.json' + query_string)['hits_over_time']
-
-        accounting = []
-        for daily_stat in stats['rows']:
-            if len(daily_stat['c']) > 1 and daily_stat['c'][1]['v'] > 0:
-                date = datetime.strptime(daily_stat['c'][0]['f'], '%a, %b %d, %Y')
-                accounting.append({
-                    'unit': 'api call',
-                    'value': daily_stat['c'][1]['f'],
-                    'date': unicode(date.isoformat()).replace(' ', 'T') + 'Z'
-                })
-
-        return accounting
+        return self._accounting_processor[unit](params, extra_qs)

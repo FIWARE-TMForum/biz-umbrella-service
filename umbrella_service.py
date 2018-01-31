@@ -105,7 +105,7 @@ class UmbrellaService(Plugin):
         url = asset.get_url()
 
         parsed_url = urlparse(url)
-        if asset.meta_info['path_allowed'] and parsed_url.query != '':
+        if asset.meta_info['path_allowed'] and (parsed_url.query != '' or asset.meta_info['qs_allowed']):
             raise PluginError('Asset URL cannot include query strings when subpath access for customers is allowed')
 
         # Check that the URL provided in the asset is a valid API Umbrella service
@@ -182,18 +182,19 @@ class UmbrellaService(Plugin):
                 start_at = unicode((datetime.utcnow() - timedelta(days=31)).isoformat()).replace(' ', 'T') + 'Z'
 
             # Retrieve pending usage
-            # TODO: Support more accounting units
-            if unit.lower() == 'api call':
-                last_usage = datetime.utcnow()
-                end_at = unicode(last_usage.isoformat()).replace(' ', 'T') + 'Z'
+            last_usage = datetime.utcnow()
+            end_at = unicode(last_usage.isoformat()).replace(' ', 'T') + 'Z'
 
-                # Check the accumulated usage for all the resources of the dataset
-                # Accounting is always done by Umbrella no mather who validates permissions
-                token = asset.meta_info['admin_token']
-                key = asset.meta_info['admin_key']
-                url = asset.get_url()
+            # Check the accumulated usage for all the resources of the dataset
+            # Accounting is always done by Umbrella no mather who validates permissions
+            token = asset.meta_info['admin_token']
+            key = asset.meta_info['admin_key']
+            path_allowed = asset.meta_info['path_allowed']
+            extra_qs = asset.meta_info['qs_allowed']
 
-                client = self._get_umbrella_client(url, token, key)
-                accounting.extend(client.get_drilldown_by_service(order.customer.email, url, start_at, end_at))
+            url = asset.get_url()
+
+            client = self._get_umbrella_client(url, token, key)
+            accounting.extend(client.get_drilldown_by_service(order.customer.email, url, path_allowed, extra_qs, start_at, end_at, unit.lower()))
 
         return accounting, last_usage
