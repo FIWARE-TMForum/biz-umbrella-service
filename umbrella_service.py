@@ -49,9 +49,9 @@ class JointClient():
         self._keystone_client.set_resource_url(url)
         self._keystone_client.set_app_id(credentials['app_id'])
 
-    def check_role(self, role, app_id):
+    def check_role(self, role):
         self._umbrella_client.check_role(role)
-        self._keystone_client.check_role(role, app_id)
+        self._keystone_client.check_role(role)
     
     def grant_permission(self, customer, role):
         self._umbrella_client.grant_permission(customer, role)
@@ -109,12 +109,20 @@ class UmbrellaService(Plugin):
             raise PluginError('Asset URL cannot include query strings when subpath access for customers is allowed')
 
         # Check that the URL provided in the asset is a valid API Umbrella service
+        token = asset.meta_info['admin_token']
+        key = asset.meta_info['admin_key']
         asset.meta_info['app_id'] = self._check_api(url, token, key)
+
+        if asset.meta_info['app_id'] is not None:
+            keystone_client = self._get_keystone_client(url, {
+                'app_id': asset.meta_info['app_id']
+            })
+            keystone_client.check_ownership(provider.name)
 
         # Check that the provided role is valid according to the selected auth method
         client = self._get_api_client(asset.meta_info['auth_method'], url, {
-            'token': asset.meta_info['admin_token'],
-            'key': asset.meta_info['admin_key'],
+            'token': token,
+            'key': key,
             'app_id': asset.meta_info['app_id']
         })
         client.check_role(asset.meta_info['role'])
@@ -194,7 +202,10 @@ class UmbrellaService(Plugin):
 
             url = asset.get_url()
 
-            client = self._get_umbrella_client(url, token, key)
+            client = self._get_umbrella_client(url, {
+                'token': token,
+                'key': key
+            })
             accounting.extend(client.get_drilldown_by_service(order.customer.email, url, path_allowed, extra_qs, start_at, end_at, unit.lower()))
 
         return accounting, last_usage

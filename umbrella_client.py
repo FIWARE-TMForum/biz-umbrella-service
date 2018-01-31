@@ -80,6 +80,7 @@ class UmbrellaClient(object):
         page_len = 100
         start = 0
         processed = False
+        matching_elem = None
 
         while not processed:
             result = self._get_request(url + '&start={}&length={}'.format(start, page_len))
@@ -93,9 +94,12 @@ class UmbrellaClient(object):
 
                 # The page element has been found
                 if processed:
+                    matching_elem = elem
                     break
             
             start += page_len
+
+        return matching_elem
 
     def validate_service(self, path):
         err_msg = 'The provided asset is not supported. ' \
@@ -109,18 +113,17 @@ class UmbrellaClient(object):
 
         # Make paginated requests to API umbrella looking for the provided paths
         url = '/api-umbrella/v1/apis.json?search[value]={}&search[regex]=false'.format(paths[0])
-        app_id = None
         def page_processor(api):
             front_path = [p for p in api['frontend_prefixes'].split('/') if p != '']
-            match = len(front_path) <= len(paths) and front_path == paths[:len(front_path)]
+            return len(front_path) <= len(paths) and front_path == paths[:len(front_path)]
 
-            # If the API is configured to accept access tokens from an external IDP save its external id
-            if match and 'idp_app_id' in api['settings'] and len(api['settings']['idp_app_id']):
-                app_id = api['settings']['idp_app_id']
+        matching_elem = self._paginate_data(url, err_msg, page_processor)
 
-            return match
+        # If the API is configured to accept access tokens from an external IDP save its external id
+        app_id = None
+        if 'idp_app_id' in matching_elem['settings'] and len(matching_elem['settings']['idp_app_id']):
+            app_id = matching_elem['settings']['idp_app_id']
 
-        self._paginate_data(url, err_msg, page_processor)
         return app_id
 
     def check_role(self, role):
@@ -138,16 +141,11 @@ class UmbrellaClient(object):
         url = '/api-umbrella/v1/users?search[value]={}'.format(email)
         err_msg = 'There is not any user registered in Umbrella instance with email: {}'.format(email)
 
-        user_id = None
-        def page_processor(user):
-            processed = False
-            if user_result['email'] == email:
-                user_id = user_result['id']
-                processed = True
-            
-            return processed
+        def page_processor(user_result):
+            return user_result['email'] == email
 
-        self._paginate_data(url, err_msg, page_processor)
+        matching_user = self._paginate_data(url, err_msg, page_processor)
+        user_id = matching_user['id']
 
         # Get user model
         return self._get_request('/api-umbrella/v1/users/{}'.format(user_id))
@@ -207,7 +205,7 @@ class UmbrellaClient(object):
 
         while not processed:
             params['start'] = start
-            params['length'] = length
+            params['length'] = page_len
             result = self._post_request('/api-umbrella/v1/analytics/logs.json', params)
 
             # There is no remaining elements
@@ -236,10 +234,17 @@ class UmbrellaClient(object):
                     current_value = 0
 
                 current_value += accounting_aggregator(elem)
-
             start += page_len
 
-    def _process_call_accounting(self, params, extra_qs):
+        # Save last info
+        if current_value > 0:
+            accounting.append({
+                'unit': unit,
+                'value': current_value,
+                'date': unicode(current_date.isoformat()) + 'T00:00:00Z'
+            })
+
+    def _process_call_accounting(self, params, parsed_url, extra_qs):
         def list_equal_elems(list1, list2):
             intersect = set(list2).intersection(list1)
             return len(list1) == len(list2) == len(intersect)
@@ -273,7 +278,7 @@ class UmbrellaClient(object):
         parsed_url = urlparse(service)
 
         rules = [
-            self._get_null_rule('gatekeeper_denied_code')
+            self._get_null_rule('gatekeeper_denied_code'),
             self._get_rule('user_email', email)
         ]
 
@@ -293,4 +298,4 @@ class UmbrellaClient(object):
             'query': json.dumps(query)
         }
 
-        return self._accounting_processor[unit](params, extra_qs)
+        return self._accounting_processor[unit](params, parsed_url, extra_qs)

@@ -23,6 +23,10 @@ from __future__ import unicode_literals
 import requests
 from urlparse import urlparse
 
+from django.core.exceptions import PermissionDenied
+
+from wstore.asset_manager.resource_plugins.plugin_error import PluginError
+
 from settings import KEYSTONE_HOST, KEYSTONE_PASSWORD, KEYSTONE_USER
 
 
@@ -76,13 +80,13 @@ class KeystoneClient(object):
                     app_id = app['id']
                     break
         else:
-            raise Exception('The provided app is not registered in keystone')
+            raise PluginError('The provided app is not registered in keystone')
 
         return app_id
 
     def set_app_id(self, app_id):
         if app_id is None:
-            raise Exception('The specified application is not registered in keystone')
+            raise PluginError('The specified application is not registered in keystone')
 
         # Validate that the included app id is a valid application in keystone
         self._check_app_id(app_id)
@@ -90,12 +94,12 @@ class KeystoneClient(object):
 
     def _check_app_id(self, app_id):
         app_url = KEYSTONE_HOST + '/v3/OS-OAUTH2/consumers/{}'.format(app_id)
-        resp = requests.get(apps_url, headers={
+        resp = requests.get(app_url, headers={
             'X-Auth-Token': self._auth_token
         })
 
         if resp.status_code != 200:
-            raise Exception('The specified application is not registered in keystone')
+            raise PluginError('The specified application is not registered in keystone')
 
     def _get_role_id(self, role_name):
         # Get available roles
@@ -113,7 +117,7 @@ class KeystoneClient(object):
                 role_id = role['id']
                 break
         else:
-            raise Exception('The provided role is not registered in keystone')
+            raise PluginError('The provided role is not registered in keystone')
 
         return role_id
 
@@ -123,6 +127,22 @@ class KeystoneClient(object):
 
     def set_resource_url(self, url):
         self._url = url
+
+    def check_ownership(self, provider):
+        assingments_url = KEYSTONE_HOST + '/v3/OS-ROLES/users/role_assignments'
+
+        resp = requests.get(assingments_url, headers={
+            'X-Auth-Token': self._auth_token
+        })
+
+        resp.raise_for_status()
+        assingments = resp.json()
+
+        for assingment in assingments['role_assignments']:
+            if assingment['application_id'] == self._app_id and assingment['user_id'] == provider and assingment['role_id'] == 'provider':
+                break
+        else:
+            raise PermissionDenied('You are not the owner of the specified IDM application')
 
     def check_role(self, role):
         self._get_role_id(role)
