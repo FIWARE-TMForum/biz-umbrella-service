@@ -1,7 +1,7 @@
 {
     "name": "Umbrella Service",
     "author": "fdelavega",
-    "version": "0.1",
+    "version": "0.2",
     "module": "umbrella_service.UmbrellaService",
     "media_types": [],
     "formats": ["URL"],
@@ -39,6 +39,12 @@
             "type": "checkbox",
             "mandatory": true,
             "label": "Additional query strings allowed"
+        },
+        "api_umbrella_server": {
+            "type": "text",
+            "label": "API Umbrella Server",
+            "placeholder": "https://umbrella.server/",
+            "mandatory": true
         },
         "admin_key": {
             "type": "text",

@@ -89,19 +89,23 @@ class UmbrellaService(Plugin):
     def _get_joint_client(self, url, credentials):
         return JointClient(url, credentials)
 
-    def _get_api_client(self, auth_method, url, credentials):
+    def _get_api_client(self, auth_method, url, server, credentials):
         # Return API Client (Umbrella or keystone) depending on the authorization mechanism
-        return self._clients[auth_method](url, credentials)
+        effective_url = url if auth_method == 'idm' else server
 
-    def _check_api(self, url, token, key):
+        return self._clients[auth_method](effective_url, credentials)
+
+    def _check_api(self, url, token, key, server):
         parsed_url = urlparse(url)
-        server = '{}://{}'.format(parsed_url.scheme, parsed_url.netloc)
+        parsed_server = urlparse(server)
 
-        umbrella_client = UmbrellaClient(server, token, key)
+        server_endpoint = '{}://{}'.format(parsed_server.scheme, parsed_server.netloc)
+
+        umbrella_client = UmbrellaClient(server_endpoint, token, key)
         return umbrella_client.validate_service(parsed_url.path)
 
     def on_post_product_spec_validation(self, provider, asset):
-        # If customer access to subpaths is allowed, the URL miust not include query string
+        # If customer access to subpaths is allowed, the URL must not include query string
         url = asset.get_url()
 
         parsed_url = urlparse(url)
@@ -111,7 +115,9 @@ class UmbrellaService(Plugin):
         # Check that the URL provided in the asset is a valid API Umbrella service
         token = asset.meta_info['admin_token']
         key = asset.meta_info['admin_key']
-        asset.meta_info['app_id'] = self._check_api(url, token, key)
+        server = asset.meta_info['api_umbrella_server']
+
+        asset.meta_info['app_id'] = self._check_api(url, token, key, server)
 
         if asset.meta_info['app_id'] is not None:
             keystone_client = self._get_keystone_client(url, {
@@ -120,7 +126,9 @@ class UmbrellaService(Plugin):
             keystone_client.check_ownership(provider.name)
 
         # Check that the provided role is valid according to the selected auth method
-        client = self._get_api_client(asset.meta_info['auth_method'], url, {
+        server = asset.meta_info['api_umbrella_server']
+
+        client = self._get_api_client(asset.meta_info['auth_method'], url, server, {
             'token': token,
             'key': key,
             'app_id': asset.meta_info['app_id']
@@ -147,8 +155,9 @@ class UmbrellaService(Plugin):
         # Activate API resources
         token = asset.meta_info['admin_token']
         key = asset.meta_info['admin_key']
+        server = asset.meta_info['api_umbrella_server']
 
-        client = self._get_api_client(asset.meta_info["auth_method"], asset.get_url(), {
+        client = self._get_api_client(asset.meta_info["auth_method"], asset.get_url(), server, {
             'token': asset.meta_info['admin_token'],
             'key': asset.meta_info['admin_key'],
             'app_id': asset.meta_info['app_id']
@@ -159,8 +168,9 @@ class UmbrellaService(Plugin):
         # Suspend API Resources
         token = asset.meta_info['admin_token']
         key = asset.meta_info['admin_key']
+        server = asset.meta_info['api_umbrella_server']
 
-        client = self._get_api_client(asset.meta_info["auth_method"], asset.get_url(), {
+        client = self._get_api_client(asset.meta_info["auth_method"], asset.get_url(), server, {
             'token': asset.meta_info['admin_token'],
             'key': asset.meta_info['admin_key'],
             'app_id': asset.meta_info['app_id']
@@ -201,8 +211,9 @@ class UmbrellaService(Plugin):
             extra_qs = asset.meta_info['qs_allowed']
 
             url = asset.get_url()
+            server = asset.meta_info['api_umbrella_server']
 
-            client = self._get_umbrella_client(url, {
+            client = self._get_umbrella_client(server, {
                 'token': token,
                 'key': key
             })
