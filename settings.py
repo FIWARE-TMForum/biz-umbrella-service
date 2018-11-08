@@ -31,3 +31,14 @@ KEYSTONE_PASSWORD = 'idm'
 KEYSTONE_HOST = 'http://idm.docker:5000'
 
 IS_LEGACY_IDM = False
+
+# =====================================================
+# READ environ to check if settings has to be overriden
+
+KEYSTONE_USER = environ.get('BAE_ASSET_IDM_USER', KEYSTONE_USER)
+KEYSTONE_PASSWORD = environ.get('BAE_ASSET_IDM_PASSWORD', KEYSTONE_PASSWORD)
+KEYSTONE_HOST = environ.get('BAE_ASSET_IDM_HOST', KEYSTONE_HOST)
+
+is_legacy = environ.get('BAE_ASSET_LEGACY_IDM', None)
+if is_legacy is not None:
+    IS_LEGACY_IDM = is_legacy == "True"
