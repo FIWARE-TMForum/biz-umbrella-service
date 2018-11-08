@@ -28,4 +28,6 @@ UNITS = [{
 # as the IDM is supposed to be unique (the same as the BAE one)
 KEYSTONE_USER = 'idm'
 KEYSTONE_PASSWORD = 'idm'
-KEYSTONE_HOST = ''
+KEYSTONE_HOST = 'http://idm.docker:5000'
+
+IS_LEGACY_IDM = False
